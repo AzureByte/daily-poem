@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -12,9 +13,9 @@ import (
 var OpenWeatherApiKey = ""
 
 func main() {
-	fmt.Println(getTitleAuthor("..\\public-domain-poetry\\poems\\W-M-MacKeracher-Milton.txt"))
+	//fmt.Println(getTitleAuthor("..\\public-domain-poetry\\poems\\W-M-MacKeracher-Milton.txt"))
 	poemlist := populatePoemList()
-	fmt.Println(poemlist)
+	fmt.Println(len(poemlist))
 	http.HandleFunc("/hello", hello)
 	http.HandleFunc("/weather/", weatherHandler)
 	http.HandleFunc("/poems", listPoemsHandler)
@@ -73,7 +74,7 @@ type poem struct {
 }
 
 func populatePoemList() []poem {
-	files, err := ioutil.ReadDir("../public-domain-poetry")
+	files, err := ioutil.ReadDir("../public-domain-poetry/poems/")
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -81,7 +82,12 @@ func populatePoemList() []poem {
 	p := make([]poem, len(files))
 
 	for i, ele := range files {
-		p[i] = visit("../public-domain-poetry/"+ele.Name(), ele)
+		p[i] = visit("../public-domain-poetry/poems/"+ele.Name(), ele)
+
+		if i%10 == 0 || (i+1) == len(files) {
+			fmt.Printf("Processed %d/%d", i+1, len(files))
+			fmt.Println()
+		}
 	}
 	return p
 }
@@ -93,39 +99,50 @@ func listPoemsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func visit(path string, f os.FileInfo) poem {
+	fmt.Printf("Processing %s \n", f.Name())
 	t, a := getTitleAuthor(path)
 
 	p := poem{Title: t, Author: a}
-
 	return p
 }
 
 //Very specific function for the data we have.
 func getTitleAuthor(path string) (string, string) {
-	b, err := ioutil.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
 		fmt.Println(err)
 	}
-	title, author := make([]byte, 0, 0), make([]byte, 0, 0)
-	i := 10
-	for ; i < len(b); i++ {
-		if b[i] == ' ' {
-			continue
-		}
-		author = append(author, b[i])
-		if b[i] == ':' {
-			break
-		}
-	}
-	for ; i < len(b); i++ {
-		if b[i] == ' ' {
-			continue
-		}
-		title = append(title, b[i])
-		if b[i] == '-' {
-			break
-		}
-	}
+	defer file.Close()
 
-	return string(title), string(author)
+	reader := bufio.NewReader(file)
+	//Skip the first --- of the file
+	Readln(reader)
+	//Extract the author
+	line, err := Readln(reader)
+	if err != nil {
+		fmt.Println(err)
+	}
+	author := line[strings.Index(line, ":")+2:]
+	//Extract the title
+	line, err = Readln(reader)
+	if err != nil {
+		fmt.Println(err)
+	}
+	title := line[strings.Index(line, ":")+2:]
+
+	return strings.TrimSpace(title), strings.TrimSpace(author)
+}
+
+func Readln(r *bufio.Reader) (string, error) {
+	var (
+		isPrefix bool  = true
+		err      error = nil
+		line, ln []byte
+	)
+
+	for isPrefix && err == nil {
+		line, isPrefix, err = r.ReadLine()
+		ln = append(ln, line...)
+	}
+	return string(ln), err
 }
