@@ -7,12 +7,16 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path"
 	"strings"
 )
 
 var OpenWeatherApiKey = ""
+var debugmaxsuccessfilelength = 0
+var debugminfailfilelength = 10000
 
 func main() {
+
 	//fmt.Println(getTitleAuthor("..\\public-domain-poetry\\poems\\W-M-MacKeracher-Milton.txt"))
 	poemlist := populatePoemList()
 	fmt.Println(len(poemlist))
@@ -82,9 +86,9 @@ func populatePoemList() []poem {
 	p := make([]poem, len(files))
 
 	for i, ele := range files {
-		p[i] = visit("../public-domain-poetry/poems/"+ele.Name(), ele)
+		p[i] = visit(path.Join("../public-domain-poetry/poems", ele.Name()), ele)
 
-		if i%10 == 0 || (i+1) == len(files) {
+		if i%1000 == 0 || (i+1) == len(files) {
 			fmt.Printf("Processed %d/%d", i+1, len(files))
 			fmt.Println()
 		}
@@ -99,10 +103,12 @@ func listPoemsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func visit(path string, f os.FileInfo) poem {
-	fmt.Printf("Processing %s \n", f.Name())
+	//fmt.Printf("Processing %s \n", f.Name())
 	t, a := getTitleAuthor(path)
 
 	p := poem{Title: t, Author: a}
+	//fmt.Println(p)
+	fmt.Printf("Files fail when over %d, succeed when under %d \n", debugminfailfilelength, debugmaxsuccessfilelength)
 	return p
 }
 
@@ -110,27 +116,41 @@ func visit(path string, f os.FileInfo) poem {
 func getTitleAuthor(path string) (string, string) {
 	file, err := os.Open(path)
 	if err != nil {
-		fmt.Println(err)
+		if len(path) < debugminfailfilelength {
+			debugminfailfilelength = len(path)
+		}
+		fmt.Printf("Error while trying to open file %s : %s \n", path, err.Error())
+		return "error", "error"
+	} else {
+		if len(path) > debugmaxsuccessfilelength {
+			debugmaxsuccessfilelength = len(path)
+		}
 	}
+
 	defer file.Close()
 
 	reader := bufio.NewReader(file)
 	//Skip the first --- of the file
-	Readln(reader)
-	//Extract the author
-	line, err := Readln(reader)
-	if err != nil {
-		fmt.Println(err)
-	}
-	author := line[strings.Index(line, ":")+2:]
-	//Extract the title
-	line, err = Readln(reader)
-	if err != nil {
-		fmt.Println(err)
-	}
-	title := line[strings.Index(line, ":")+2:]
+	author, title := "", ""
+	for i := 0; i < 10; i++ {
+		line, err := Readln(reader)
+		if err != nil {
+			fmt.Printf("Error reading line from %s : %s \n", file.Name, err.Error())
+		}
 
-	return strings.TrimSpace(title), strings.TrimSpace(author)
+		if author == "" && strings.Contains(line, "author") {
+			author = strings.TrimSpace(line[strings.Index(line, ":")+2:])
+		}
+		if title == "" && strings.Contains(line, "title") {
+			title = strings.TrimSpace(line[strings.Index(line, ":")+2:])
+		}
+
+		if author != "" && title != "" {
+			break
+		}
+	}
+
+	return title, author
 }
 
 func Readln(r *bufio.Reader) (string, error) {
